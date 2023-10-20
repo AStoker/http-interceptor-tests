@@ -72,7 +72,6 @@ describe('auth interceptor', () => {
       error: (e) => {
         console.log('We failed', e);
         expect(true).toBe(false);
-        // expect(authService.refreshJwtToken).toHaveBeenCalled();
         done();
       },
     });
