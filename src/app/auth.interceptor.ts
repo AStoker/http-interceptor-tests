@@ -49,7 +49,7 @@ export class AuthInterceptor implements HttpInterceptor {
             switchMap((newJwt: any) => {
               console.log('Refreshed token ' + newJwt);
               console.log('Placing token on request.');
-              return of(
+              return next.handle(
                 request.clone({
                   setHeaders: { Authorization: `Bearer ${newJwt}` },
                 })
