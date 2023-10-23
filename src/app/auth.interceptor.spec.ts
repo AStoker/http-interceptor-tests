@@ -42,8 +42,8 @@ describe('auth interceptor', () => {
         { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true },
       ],
     });
-    httpTestingController = TestBed.inject(HttpTestingController);
     httpClient = TestBed.inject(HttpClient);
+    httpTestingController = TestBed.inject(HttpTestingController);
 
     authService = TestBed.inject(AuthService);
     authInterceptor = interceptorOf(AuthInterceptor);
@@ -54,7 +54,71 @@ describe('auth interceptor', () => {
     localStorage.clear();
   });
 
-  it('handles refresh token', fakeAsync(() => {
+  it('makes a normal request', (done) => {
+
+    // Create a VALID_TOKEN that doesn't expire for 30 minutes
+    const VALID_TOKEN = createJwtToken(Math.floor(Date.now() / 1000) + 30 * 60);
+
+    authService.jwtToken = VALID_TOKEN;
+
+    httpClient.get('/some-endpoint').subscribe({
+      next: (d) => {
+        console.log(
+          'Successfully made request',
+          d
+        );
+        // Make sure the authorization header has the token of VALID_TOKEN
+        done();
+      },
+      error: (e) => {
+        console.log('Errored out: ', e);
+        expect(true).toBe(false);
+        fail('We failed');
+      },
+    });
+
+    const httpRequest = httpTestingController.match((req) => {
+      return req.url === '/some-endpoint' && req.headers.get('Authorization') == `Bearer ${VALID_TOKEN}`;
+    });
+    httpRequest[0].flush('great success'); // This request never makes it to the final test.
+
+  });
+  it('handles refreshing the token before making the request', (done) => {
+
+    // Create a EXPIRED_TOKEN that has expired
+    const EXPIRED_TOKEN = createJwtToken(Math.floor(Date.now() / 1000) - 30 * 60);
+
+    // Create a VALID_TOKEN that doesn't expire for 30 minutes
+    const VALID_TOKEN = createJwtToken(Math.floor(Date.now() / 1000) + 30 * 60);
+
+    authService.jwtToken = EXPIRED_TOKEN;
+
+    // Create a spy on the refreshJwtToken function. Doesn't need to actually do anything
+    jest.spyOn(authService, 'refreshJwtToken').mockImplementation(() => of(VALID_TOKEN));
+
+    httpClient.get('/some-endpoint').subscribe({
+      next: (d) => {
+        console.log(
+          'Successfully made request',
+          d
+        );
+        // Make sure the authorization header has the token of VALID_TOKEN
+        done();
+      },
+      error: (e) => {
+        console.log('Errored out: ', e);
+        expect(true).toBe(false);
+        fail('We failed');
+      },
+    });
+
+    const httpRequest = httpTestingController.match((req) => {
+      return req.url === '/some-endpoint' && req.headers.get('Authorization') == `Bearer ${VALID_TOKEN}`;
+    });
+    httpRequest[0].flush('great success'); // This request never makes it to the final test.
+
+  });
+  it('handles refreshing the token if 401 is returned', (done) => {
     const VALID_TOKEN = 'some-jwt-token';
 
     // Create a spy on the refreshJwtToken function. Doesn't need to actually do anything
@@ -69,10 +133,12 @@ describe('auth interceptor', () => {
           d
         );
         expect(authService.refreshJwtToken).toHaveBeenCalled();
+        done();
       },
       error: (e) => {
         console.log('We failed', e);
         expect(true).toBe(false);
+        fail('We failed');
       },
     });
 
@@ -82,7 +148,6 @@ describe('auth interceptor', () => {
       statusText: 'Unauthorized',
     }); // This request never makes it to the final test.
 
-    flush();
 
     const req2 = httpTestingController.match(req => {
       console.log(req.url, req.headers.getAll('Authorization'));
@@ -90,7 +155,33 @@ describe('auth interceptor', () => {
     });
     req2[0].flush('Hello World'); // This request does make it to the final test.
 
-    flush();
 
-  }));
+  });
 });
+
+/**
+ * Create a quick JWT token for testing
+ * @param exp The expiration date of the token
+ * @returns The JWT token
+ */
+function createJwtToken(exp: number): string {
+  const header = { alg: 'HS512', typ: 'JWT' };
+  const payload = {
+    "sub": "swampfox",
+    "ref": "false",
+    "src": "DATABASE",
+    "auths": [
+      "Swampfox"
+    ],
+    "en": true,
+    "uisexp": false,
+    "exp": exp,
+    "user": "swampfox",
+    "timeout": 30
+  };
+  const headerEncoded = window.btoa(JSON.stringify(header));
+  const payloadEncoded = window.btoa(JSON.stringify(payload));
+  const signature = 'testsignature';
+
+  return `${headerEncoded}.${payloadEncoded}.${signature}`;
+}
